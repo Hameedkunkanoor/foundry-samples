@@ -15,6 +15,12 @@ Python. The native `a2a-sdk` owns the Agent Card, JSON-RPC, Task, artifact, and
 executor behavior. `azure-ai-agentserver-a2a` adds Foundry's canonical routes,
 request context, readiness, telemetry, and lifecycle.
 
+> [!IMPORTANT]
+> This is a **reference-only alpha sample**, not a production or merge-ready
+> dependency update. It uses published packages from the public Azure SDK dev
+> feed, not PyPI. The agent remains a deterministic echo; it does not call an
+> LLM or require a model deployment.
+
 ## How it works
 
 The executor creates an A2A Task, adds an artifact containing
@@ -25,6 +31,10 @@ POST /invocations/a2a
 GET  /invocations/a2a/.well-known/agent-card.json
 GET  /readiness
 ```
+
+These are the compatibility paths used by this existing example. The alpha SDK
+also supports the canonical `POST /a2a` and
+`GET /a2a/.well-known/agent-card.json` routes.
 
 [`test_client.py`](src/echo-a2a/test_client.py) uses the native A2A client for
 Agent Card discovery and JSON-RPC validation against either the local server or
@@ -41,12 +51,41 @@ the public Foundry A2A endpoint.
 2. Azure Developer CLI 1.27.1 or later with the `azure.ai.agents` extension.
 3. Azure CLI authentication for hosted E2E validation.
 
+## Alpha dependencies
+
+This reference pins both packages from
+[SDK build 20261022.2](https://dev.azure.com/azure-sdk/internal/_build/results?buildId=6988381):
+
+| Package | Version |
+|---------|---------|
+| `azure-ai-agentserver-a2a` | `1.0.0a20261022002` |
+| `azure-ai-agentserver-core` | `2.2.1a20261022002` |
+
+The packages are available on the public Azure SDK dev feed:
+
+```text
+https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-python/pypi/simple/
+```
+
+Keep package-index configuration outside the fully pinned requirements file,
+as required by the repository dependency policy. Supply it to pip through the
+environment or command line, as shown below. Do not substitute a local wheel
+or editable SDK checkout when validating these published alpha versions.
+
+The credential-free repository resolver uses PyPI only, so it cannot validate
+these dev-feed-only pins without additional feed configuration (`PYREQ012`).
+This reference PR does not add policy exceptions or disable checks. Before
+merging a production sample, switch both pins to suitable PyPI releases and
+remove the alpha-feed setup. SDK development is tracked in
+[Azure/azure-sdk-for-python#49649](https://github.com/Azure/azure-sdk-for-python/pull/49649).
+
 ## Run and test locally
 
 ```powershell
 cd src\echo-a2a
 python -m venv .venv
-.\.venv\Scripts\python -m pip install -r requirements.txt
+$env:PIP_EXTRA_INDEX_URL = "https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-python/pypi/simple/"
+.\.venv\Scripts\python -m pip install --pre -r requirements.txt
 .\.venv\Scripts\python main.py
 ```
 
@@ -64,6 +103,13 @@ Echo: hello
 ```
 
 ## Deploy to Microsoft Foundry
+
+The commands below describe the normal deployment workflow. For this alpha
+reference, the remote dependency builder must also have access to the Azure SDK
+dev feed. Setting `PIP_EXTRA_INDEX_URL` in a local terminal does **not** by
+itself configure the hosted build environment. Do not assume a PyPI-only remote
+build can install these pins; use a suitably configured build environment or
+wait for a PyPI preview before using the normal deployment path.
 
 From this sample directory:
 
