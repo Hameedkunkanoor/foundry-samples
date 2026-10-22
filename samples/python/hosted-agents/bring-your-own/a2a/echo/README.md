@@ -53,8 +53,7 @@ the public Foundry A2A endpoint.
 
 ## Alpha dependencies
 
-This reference pins both packages from
-[SDK build 20261022.2](https://dev.azure.com/azure-sdk/internal/_build/results?buildId=6988381):
+This reference pins both packages from SDK build `20261022.2`:
 
 | Package | Version |
 |---------|---------|
@@ -84,7 +83,8 @@ remove the alpha-feed setup. SDK development is tracked in
 ```powershell
 cd src\echo-a2a
 python -m venv .venv
-$env:PIP_EXTRA_INDEX_URL = "https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-python/pypi/simple/"
+$env:PIP_INDEX_URL = "https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-python/pypi/simple/"
+$env:PIP_EXTRA_INDEX_URL = "https://pypi.org/simple/"
 .\.venv\Scripts\python -m pip install --pre -r requirements.txt
 .\.venv\Scripts\python main.py
 ```
@@ -106,7 +106,7 @@ Echo: hello
 
 The commands below describe the normal deployment workflow. For this alpha
 reference, the remote dependency builder must also have access to the Azure SDK
-dev feed. Setting `PIP_EXTRA_INDEX_URL` in a local terminal does **not** by
+dev feed. Setting pip environment variables in a local terminal does **not** by
 itself configure the hosted build environment. Do not assume a PyPI-only remote
 build can install these pins; use a suitably configured build environment or
 wait for a PyPI preview before using the normal deployment path.
