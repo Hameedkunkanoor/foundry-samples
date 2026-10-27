@@ -27,14 +27,18 @@ services:
     name: echo-a2a
     displayName: Echo (Python, A2A)
     description: >
-      Minimal native A2A v1 echo agent hosted by
-      azure-ai-agentserver-a2a for the Foundry platform contract.
+      Deterministic native A2A v1 echo agent hosted by
+      azure-ai-agentserver-a2a. No model deployment or LLM call is required.
     protocols:
       - protocol: a2a
         version: 1.0.0
+    env:
+      OTEL_INSTRUMENTATION_A2A_SDK_ENABLED: 'false'
+      OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: 'false'
     agentEndpoint:
       protocols:
         - a2a
+        # Required by the current Foundry Agent Card gateway.
         - responses
     agentCard:
       description: Echoes the user's A2A message as a completed Task artifact.
