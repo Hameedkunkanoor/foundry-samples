@@ -15,7 +15,7 @@ Pick the tool that matches your workflow — both deploy the same sample image t
 
 #### Deploy with the Azure Developer CLI (`azd`)
 
-> **Prerequisites:** Install Azure Developer CLI (`azd`) 1.27.1 or later with the Foundry AI extension. Manifests that set service environment variables use the `env:` map and require `azure.ai.agents` 1.0.0-beta.9 or later; their `requiredVersions` blocks enforce these minimums. See [Set up azd for hosted agents](https://learn.microsoft.com/en-us/azure/foundry/agents/quickstarts/quickstart-hosted-agent?pivots=azd) if you haven't already.
+> **Prerequisites:** Install Azure Developer CLI (`azd`) 1.27.1 or later with the Foundry AI extension. For service environment variables in the `env:` map, follow the setup guidance for `azure.ai.agents` 1.0.0-beta.9 or later, even when a manifest declares an older minimum. See [Set up azd for hosted agents](https://learn.microsoft.com/en-us/azure/foundry/agents/quickstarts/quickstart-hosted-agent?pivots=azd) if you haven't already.
 
 ```bash
 mkdir my-agent && cd my-agent
@@ -39,6 +39,30 @@ See the [VS Code quickstart](https://learn.microsoft.com/en-us/azure/foundry/age
 Read on to pick the right sample for your scenario, or jump to the [learning path](#learning-path) for a guided walkthrough.
 
 ---
+
+## Python startup configuration
+
+The Python hosted-agent services in these samples configure
+`PYTHONNOUSERSITE: "1"` in their `azure.yaml` service `env` maps. The Python
+Dockerfiles also set `ENV PYTHONNOUSERSITE=1` for container runs that bypass
+the manifest. This is sample/customer configuration, not an environment
+variable automatically injected by the hosting platform.
+
+`PYTHONNOUSERSITE=1` disables Python's user-site package loading. Install
+dependencies in the sample's virtual environment, container image, or system
+environment rather than with `pip --user`. Existing `uv sync --frozen`
+installations use a project virtual environment and remain compatible.
+This is a scoped Python startup measure, not a general execution-prevention
+or sandbox boundary.
+
+Keep this setting in deployment environment configuration and Python
+Dockerfiles rather than adding it to individual run commands. Loading it
+from `.env` inside Python or assigning `os.environ` in `main.py` is too late
+to affect interpreter startup.
+
+For custom SDK or REST deployments, include `"PYTHONNOUSERSITE": "1"` in the
+hosted agent definition's `environment_variables` map. For an image that does
+not already set it, pass `-e PYTHONNOUSERSITE=1` to `docker run`.
 
 ## Two protocols: Responses and Invocations
 
@@ -87,7 +111,7 @@ Hosted agents run any code you can put in a container. These samples cover three
 | ----------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | **Best for**            | Starting fresh on Foundry — also supports AutoGen and Semantic Kernel              | Already using LangChain / LangGraph                                   | Already built with CrewAI or your own stack                                                                                 |
 | **SDK**                 | `agent-framework-foundry-hosting` (includes core, openai, foundry, orchestrations) | `langchain-azure-ai[hosting]` (`ResponsesHostServer` / `InvocationsHostServer`) | `azure-ai-agentserver-responses` / `azure-ai-agentserver-invocations` / `azure-ai-agentserver-a2a`, or `azure-ai-agentserver-core` for fully custom HTTP |
-| **Foundry integration** | Native — sessions, tools, memory, streaming all built in                           | Native via `langchain_azure_ai.agents.hosting` — sessions, streaming, and tool-call surfacing built in for LangGraph agents (`create_agent`) and custom `StateGraph`s | Core adapter hosts the web server and exposes `/invocations` and `/responses` endpoints; you supply the agent logic         |
+| **Foundry integration** | Native — sessions, tools, memory, streaming all built in                           | Native via `langchain_azure_ai.agents.hosting` — sessions, streaming, and tool-call surfacing built in for LangGraph agents (`create_agent`) and custom `StateGraph`s | Protocol hosts expose `/invocations`, `/responses`, or `/a2a`; you supply the agent logic. |
 | **Protocols**           | Responses and Invocations                                                          | Responses and Invocations                                             | Responses, Invocations, and A2A                                                                                             |
 | **Language support**    | Python and C#                                                                      | Python only                                                           | Any language (Python and C# samples provided)                                                                               |
 | **Start here**          | [Basic Agent →](agent-framework/responses/01-basic/)                               | [LangGraph Chat →](langgraph/responses/01-langgraph-chat/)            | [Hello World →](bring-your-own/responses/hello-world/)                                                                      |
@@ -209,6 +233,8 @@ Already built an agent with CrewAI or your own code? The protocol SDKs (`azure-a
 | Sample | What it shows |
 | ------ | ------------- |
 | **[Echo](bring-your-own/a2a/echo/)** | Minimal native A2A v1 agent using `a2a-sdk`, hosted on Foundry with `azure-ai-agentserver-a2a`, plus a dedicated local and hosted A2A client. |
+| **[Long-running Tasks](bring-your-own/a2a/long-running-tasks/)** | Submit a report, poll its native Task status, or cancel the in-process work. |
+| **[Task persistence](bring-your-own/a2a/task-persistence/)** | Store full native Task snapshots and retrieve them after reconstructing the server. |
 
 ## Python dependencies
 

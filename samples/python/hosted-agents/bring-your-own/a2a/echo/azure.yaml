@@ -33,12 +33,12 @@ services:
       - protocol: a2a
         version: 1.0.0
     env:
+      PYTHONNOUSERSITE: '1'
       OTEL_INSTRUMENTATION_A2A_SDK_ENABLED: 'false'
       OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: 'false'
     agentEndpoint:
       protocols:
         - a2a
-        # Required by the current Foundry Agent Card gateway.
         - responses
     agentCard:
       description: Echoes the user's A2A message as a completed Task artifact.

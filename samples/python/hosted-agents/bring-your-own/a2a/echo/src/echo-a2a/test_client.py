@@ -1,76 +1,52 @@
 # Copyright (c) Microsoft. All rights reserved.
-
-"""Dedicated local or hosted E2E client for the native A2A echo sample."""
+"""Invoke the Echo sample through the official native A2A client."""
 
 import argparse
 import asyncio
-from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
-import httpx
+import httpx2 as httpx
 from a2a.client import A2ACardResolver, ClientConfig, create_client
-from a2a.helpers import get_artifact_text, get_message_text, new_text_message
-from a2a.types import Role, SendMessageRequest, TaskState
+from a2a.helpers import get_artifact_text, new_text_message
+from a2a.types import GetTaskRequest, Role, SendMessageRequest, TaskState
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--endpoint", default="http://localhost:8088")
-    parser.add_argument(
-        "--card-path",
-        default="a2a/.well-known/agent-card.json",
-    )
-    parser.add_argument("--message", default="hello")
-    parser.add_argument("--azure-auth", action="store_true")
-    return parser.parse_args()
-
-
-async def _run(args: argparse.Namespace) -> None:
-    headers: dict[str, str] = {}
-    if args.azure_auth:
-        from azure.identity import AzureDeveloperCliCredential
-
-        token = AzureDeveloperCliCredential().get_token("https://ai.azure.com/.default")
-        headers["Authorization"] = f"Bearer {token.token}"
-
-    endpoint = urlsplit(args.endpoint)
-    base_url = urlunsplit((endpoint.scheme, endpoint.netloc, endpoint.path, "", ""))
-    query = dict(parse_qsl(endpoint.query))
-
-    async with httpx.AsyncClient(
-        headers=headers,
-        params=query,
-        timeout=60.0,
-    ) as http_client:
-        card = await A2ACardResolver(http_client, base_url).get_agent_card(
-            relative_card_path=args.card_path,
+async def run(endpoint: str, message: str) -> None:
+    async with httpx.AsyncClient(headers={"A2A-Version": "1.0"}, timeout=30) as http:
+        card = await A2ACardResolver(http, endpoint).get_agent_card(
+            relative_card_path="a2a/.well-known/agent-card.json"
         )
-        http_client.headers["A2A-Version"] = "1.0"
         client = await create_client(
-            card,
-            ClientConfig(streaming=True, httpx_client=http_client),
+            card, ClientConfig(streaming=False, httpx_client=http)
         )
-        request = SendMessageRequest(message=new_text_message(args.message, role=Role.ROLE_USER))
-
-        outputs: list[str] = []
-        completed = False
-        async for response in client.send_message(request):
-            if response.HasField("message"):
-                outputs.append(get_message_text(response.message))
-            elif response.HasField("task"):
-                outputs.extend(get_artifact_text(artifact) for artifact in response.task.artifacts)
-                completed = response.task.status.state == TaskState.TASK_STATE_COMPLETED
-            elif response.HasField("artifact_update"):
-                outputs.append(get_artifact_text(response.artifact_update.artifact))
-            elif response.HasField("status_update"):
-                completed = response.status_update.status.state == TaskState.TASK_STATE_COMPLETED
-
-        expected = f"Echo: {args.message}"
-        if outputs != [expected]:
-            raise RuntimeError(f"Expected one artifact {expected!r}, received {outputs!r}")
-        if not completed:
-            raise RuntimeError("Expected a completed A2A streaming status update")
-        print(expected, flush=True)
+        try:
+            tasks = [
+                response.task
+                async for response in client.send_message(
+                    SendMessageRequest(
+                        message=new_text_message(message, role=Role.ROLE_USER)
+                    )
+                )
+                if response.HasField("task")
+            ]
+            if len(tasks) != 1:
+                raise RuntimeError(f"Expected one Task, received {len(tasks)}")
+            task = tasks[0]
+            if task.status.state != TaskState.TASK_STATE_COMPLETED:
+                raise RuntimeError("Echo Task did not complete")
+            if [get_artifact_text(artifact) for artifact in task.artifacts] != [
+                f"Echo: {message}"
+            ]:
+                raise RuntimeError("Echo returned an unexpected artifact")
+            if await client.get_task(GetTaskRequest(id=task.id)) != task:
+                raise RuntimeError("GetTask did not preserve the completed Task")
+            print(f"task_id={task.id}\nEcho: {message}")
+        finally:
+            await client.close()
 
 
 if __name__ == "__main__":
-    asyncio.run(_run(_parse_args()))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--endpoint", default="http://localhost:8088")
+    parser.add_argument("--message", default="hello")
+    args = parser.parse_args()
+    asyncio.run(run(args.endpoint, args.message))
