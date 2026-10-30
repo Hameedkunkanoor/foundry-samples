@@ -53,12 +53,14 @@ and choose a unique name:
 ```powershell
 azd ai agent init --src . `
   -t "https://github.com/Hameedkunkanoor/foundry-samples/blob/43409818cf6472a15a1d11d01bc7f1f0ec41fa2a/samples/python/hosted-agents/bring-your-own/a2a/long-running-tasks/azure.yaml" `
-  --project-id "<PROJECT-ARM-ID>" --agent-name "report-youralias-01" --no-prompt
+  --project-id "<PROJECT-ARM-ID>" --agent-name "report-youralias-01"
 ```
 
 azd adopts the sample's [azure.yaml](azure.yaml) in the current folder.
 If you already cloned the repository, use this sample's absolute manifest
 path instead of the GitHub URL.
+If prompted, confirm the intended existing project and unique agent name.
+Skip model configuration; this sample does not require a model.
 
 ### Provision Azure resources (if needed)
 
@@ -82,7 +84,7 @@ agent below for CLI invocation. Local lifecycle tests are listed in the
 Stop the local server with Ctrl+C. From the initialized project root:
 
 ```powershell
-azd deploy report-a2a --no-prompt
+azd deploy report-a2a
 azd ai agent show --output json
 ```
 

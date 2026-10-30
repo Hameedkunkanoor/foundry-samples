@@ -54,12 +54,14 @@ and choose a unique agent name:
 ```powershell
 azd ai agent init --src . `
   -t "https://github.com/Hameedkunkanoor/foundry-samples/blob/43409818cf6472a15a1d11d01bc7f1f0ec41fa2a/samples/python/hosted-agents/bring-your-own/a2a/task-persistence/azure.yaml" `
-  --project-id "<PROJECT-ARM-ID>" --agent-name "persistent-youralias-01" --no-prompt
+  --project-id "<PROJECT-ARM-ID>" --agent-name "persistent-youralias-01"
 ```
 
 azd adopts the sample's [azure.yaml](azure.yaml) in the current directory.
 For a local clone, use this sample's absolute manifest path instead of the
 GitHub URL.
+If prompted, confirm the intended existing project and unique agent name.
+Skip model configuration; this sample does not require a model.
 
 ### Provision Azure resources (if needed)
 
@@ -86,7 +88,7 @@ use the hosted path below for CLI messages.
 Stop the local server with Ctrl+C. From the initialized project root:
 
 ```powershell
-azd deploy persistent-a2a --no-prompt
+azd deploy persistent-a2a
 azd ai agent show --output json
 ```
 

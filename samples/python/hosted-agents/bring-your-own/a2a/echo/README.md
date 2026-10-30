@@ -54,12 +54,14 @@ agent name:
 ```powershell
 azd ai agent init --src . `
   -t "https://github.com/Hameedkunkanoor/foundry-samples/blob/43409818cf6472a15a1d11d01bc7f1f0ec41fa2a/samples/python/hosted-agents/bring-your-own/a2a/echo/azure.yaml" `
-  --project-id "<PROJECT-ARM-ID>" --agent-name "echo-youralias-01" --no-prompt
+  --project-id "<PROJECT-ARM-ID>" --agent-name "echo-youralias-01"
 ```
 
 azd downloads the sample and adopts its [azure.yaml](azure.yaml) in the current
 folder. If you already cloned the repository, use the absolute path to this
 sample's `azure.yaml` instead of the GitHub URL.
+If prompted, confirm the intended existing project and unique agent name.
+Skip model configuration; Echo does not require a model.
 
 ### Provision Azure resources (if needed)
 
@@ -91,7 +93,7 @@ Beta.23 does not support A2A invocation with `azd ai agent invoke --local`.
 Stop the local server with Ctrl+C. From the initialized project root:
 
 ```powershell
-azd deploy echo-a2a --no-prompt
+azd deploy echo-a2a
 azd ai agent show --output json
 ```
 
