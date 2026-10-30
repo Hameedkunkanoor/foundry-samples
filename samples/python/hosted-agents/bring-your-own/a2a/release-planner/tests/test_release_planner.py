@@ -1,6 +1,7 @@
 """Contract checks and real three-server native A2A collaboration."""
 
 import asyncio
+import hashlib
 import importlib.util
 import json
 import os
@@ -26,7 +27,144 @@ SPEC.loader.exec_module(module)
 PROJECT = "https://example.services.ai.azure.com/api/projects/test"
 
 
+def specialist_card(role: str, endpoint: str) -> dict:
+    return {
+        "skills": [{"id": role}],
+        "supportedInterfaces": [
+            {"protocolBinding": "JSONRPC", "protocolVersion": "1.0", "url": endpoint}
+        ],
+    }
+
+
 class ContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_advertised_query_is_authoritative_and_transport_cannot_change(self):
+        source = PROJECT + "/agents/discovery/endpoint/protocols/a2a?api-version=v1"
+        target = (
+            PROJECT
+            + "/agents/worker/endpoint/protocols/a2a?api-version=v2&custom=value"
+        )
+        self.assertEqual(
+            target,
+            module.select_interface(
+                specialist_card("scope", target), source, PROJECT, False
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "transport"):
+            module.select_interface(
+                specialist_card("scope", target),
+                "http://127.0.0.1:8089/a2a",
+                PROJECT,
+                False,
+            )
+
+    async def test_invokes_advertised_interface_and_preserves_api_version(self):
+        configured = PROJECT + "/agents/discovery/endpoint/protocols/a2a?api-version=v1"
+        advertised = PROJECT + "/agents/worker/endpoint/protocols/a2a"
+        services = module.Services(PROJECT, "test-model", False)
+        services.headers = AsyncMock(return_value={"Authorization": "test-auth"})
+        requests = []
+
+        def respond(request):
+            requests.append(request)
+            if request.method == "GET":
+                card = specialist_card("scope", advertised)
+                card["supportedInterfaces"].insert(
+                    0,
+                    {
+                        "protocolBinding": "GRPC",
+                        "protocolVersion": "1.0",
+                        "url": "https://untrusted.invalid",
+                    },
+                )
+                return httpx.Response(200, json=card)
+            rpc = json.loads(request.content)
+            artifact = {
+                "role": "scope",
+                "run_id": "run",
+                "input_sha256": hashlib.sha256(b"test").hexdigest(),
+                "execution_id": "execution-1",
+                "analysis": "scope assessment",
+            }
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": rpc["id"],
+                    "result": {
+                        "task": {
+                            "id": "remote-task-1",
+                            "status": {"state": "TASK_STATE_COMPLETED"},
+                            "artifacts": [{"parts": [{"text": json.dumps(artifact)}]}],
+                        }
+                    },
+                },
+            )
+
+        await services.http.aclose()
+        services.http = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        try:
+            result = await services.specialist(configured, "scope", "test", "run")
+            self.assertEqual("remote-task-1", result["task_id"])
+            self.assertEqual(
+                configured.replace("/a2a?", "/a2a/agentCard/v1.0?"),
+                str(requests[0].url),
+            )
+            self.assertEqual(advertised + "?api-version=v1", str(requests[1].url))
+            self.assertNotEqual(configured, str(requests[1].url))
+        finally:
+            await services.close()
+
+    async def test_invalid_advertised_interfaces_never_receive_a_post(self):
+        configured = PROJECT + "/agents/discovery/endpoint/protocols/a2a?api-version=v1"
+        cases = [
+            {},
+            {"supportedInterfaces": []},
+            {
+                "supportedInterfaces": [
+                    {
+                        "protocolBinding": "JSONRPC",
+                        "protocolVersion": "0.3",
+                        "url": configured,
+                    }
+                ]
+            },
+            specialist_card("scope", "https://untrusted.invalid/a2a"),
+            specialist_card(
+                "scope", PROJECT + "-other/agents/worker/endpoint/protocols/a2a"
+            ),
+            specialist_card(
+                "scope",
+                PROJECT + "/agents/../other/agents/worker/endpoint/protocols/a2a",
+            ),
+            specialist_card("scope", PROJECT + "/agents/%2e%2e/endpoint/protocols/a2a"),
+            specialist_card("scope", "http://127.0.0.1:8089/a2a"),
+            specialist_card("scope", ""),
+            specialist_card("scope", 42),
+        ]
+        for card in cases:
+            card["skills"] = [{"id": "scope"}]
+            with self.subTest(card=card):
+                services = module.Services(PROJECT, "test-model", False)
+                services.headers = AsyncMock(
+                    return_value={"Authorization": "test-auth"}
+                )
+                requests = []
+
+                def respond(request):
+                    requests.append(request)
+                    return httpx.Response(200, json=card)
+
+                await services.http.aclose()
+                services.http = httpx.AsyncClient(
+                    transport=httpx.MockTransport(respond)
+                )
+                try:
+                    with self.assertRaises(ValueError):
+                        await services.specialist(configured, "scope", "test", "run")
+                    self.assertEqual(["GET"], [request.method for request in requests])
+                finally:
+                    await services.close()
+
     async def test_hosted_a2a_headers_use_the_agent_credential(self):
         with patch.dict(
             os.environ,
@@ -113,7 +251,9 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
 
         def respond(request):
             if request.method == "GET":
-                return httpx.Response(200, json={"skills": [{"id": "scope"}]})
+                return httpx.Response(
+                    200, json=specialist_card("scope", "http://127.0.0.1:8089/a2a")
+                )
             rpc = json.loads(request.content)
             return httpx.Response(
                 200,

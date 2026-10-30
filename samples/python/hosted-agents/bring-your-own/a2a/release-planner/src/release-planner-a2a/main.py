@@ -5,7 +5,7 @@ import hashlib
 import json
 import logging
 import os
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit
 from uuid import uuid4
 
 os.environ.setdefault("OTEL_INSTRUMENTATION_A2A_SDK_ENABLED", "false")
@@ -60,7 +60,13 @@ def check_endpoint(endpoint: str, project: str, hosted: bool) -> None:
     if parsed.scheme == "https" and endpoint.startswith(
         project.rstrip("/") + "/agents/"
     ):
-        if not parsed.path.endswith("/endpoint/protocols/a2a"):
+        prefix = urlsplit(project).path.rstrip("/") + "/agents/"
+        agent, _, route = parsed.path.removeprefix(prefix).partition("/")
+        if (
+            not agent
+            or not agent.replace("-", "").isalnum()
+            or route != "endpoint/protocols/a2a"
+        ):
             raise ValueError("Expected a native Foundry A2A endpoint")
         return
     if (
@@ -73,6 +79,46 @@ def check_endpoint(endpoint: str, project: str, hosted: bool) -> None:
     raise ValueError(
         "Specialists must be in the configured Foundry project or local loopback"
     )
+
+
+def select_interface(
+    card: dict, discovery_endpoint: str, project: str, hosted: bool
+) -> str:
+    interfaces = card.get("supportedInterfaces")
+    if not isinstance(interfaces, list):
+        raise ValueError("Remote Card must advertise supportedInterfaces")
+    for interface in interfaces:
+        if not isinstance(interface, dict):
+            raise ValueError("Remote Card contains an invalid interface")
+        if (
+            interface.get("protocolBinding") != "JSONRPC"
+            or interface.get("protocolVersion") != "1.0"
+        ):
+            continue
+        endpoint = interface.get("url")
+        if (
+            not isinstance(endpoint, str)
+            or not endpoint
+            or endpoint != endpoint.strip()
+        ):
+            raise ValueError("Remote Card interface must contain an absolute URL")
+        check_endpoint(endpoint, project, hosted)
+        source = urlsplit(discovery_endpoint)
+        target = urlsplit(endpoint)
+        if target.scheme != source.scheme:
+            raise ValueError(
+                "Remote Card must not change the discovery endpoint's transport"
+            )
+        # Foundry Cards can omit the API query required by their public endpoint.
+        query = dict(parse_qsl(target.query, keep_blank_values=True))
+        api_version = dict(parse_qsl(source.query, keep_blank_values=True)).get(
+            "api-version"
+        )
+        if api_version and "api-version" not in query:
+            query["api-version"] = api_version
+            return target._replace(query=urlencode(query)).geturl()
+        return endpoint
+    raise ValueError("Remote Card has no JSONRPC A2A 1.0 interface")
 
 
 class Services:
@@ -165,9 +211,12 @@ class Services:
             card = card_response.json()
             if not any(skill.get("id") == role for skill in card.get("skills", [])):
                 raise ValueError(f"Remote Card does not advertise the {role} skill")
+            invocation_endpoint = select_interface(
+                card, endpoint, self.project, self.hosted
+            )
             rpc_id = uuid4().hex
             response = await self.http.post(
-                endpoint,
+                invocation_endpoint,
                 headers=headers,
                 json={
                     "jsonrpc": "2.0",
