@@ -6,6 +6,7 @@ import io
 import json
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -195,6 +196,83 @@ class A2AHelperTests(unittest.TestCase):
 
 
 class A2AContractTests(unittest.TestCase):
+    def test_projects_configure_alpha_feed_without_customer_flags(self):
+        projects = (
+            "echo/src/echo-a2a",
+            "long-running-tasks/src/report-a2a",
+            "task-persistence/src/persistent-a2a",
+        )
+        for project in projects:
+            path = ROOT / "samples/python/hosted-agents/bring-your-own/a2a" / project
+            with self.subTest(project=project):
+                manifest = tomllib.loads(
+                    (path / "pyproject.toml").read_text(encoding="utf-8")
+                )
+                dependencies = manifest["project"]["dependencies"]
+                self.assertIn(
+                    "azure-ai-agentserver-a2a==1.0.0a20261029006", dependencies
+                )
+                self.assertIn(
+                    "azure-ai-agentserver-core==2.3.1a20261029006", dependencies
+                )
+                config = manifest["tool"]["uv"]
+                self.assertNotIn("prerelease", config)
+                self.assertEqual(
+                    {"azure-ai-agentserver-a2a", "azure-ai-agentserver-core"},
+                    set(config["sources"]),
+                )
+                index = next(
+                    item for item in config["index"] if item["name"] == "azure-sdk-dev"
+                )
+                self.assertTrue(index["explicit"])
+                self.assertEqual(
+                    "https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-python/pypi/simple/",
+                    index["url"],
+                )
+                for source in config["sources"].values():
+                    self.assertEqual({"index": "azure-sdk-dev"}, source)
+
+    def test_frozen_locks_only_use_dev_feed_for_the_two_sdk_packages(self):
+        for project in (
+            "echo/src/echo-a2a",
+            "long-running-tasks/src/report-a2a",
+            "task-persistence/src/persistent-a2a",
+        ):
+            path = (
+                ROOT
+                / "samples/python/hosted-agents/bring-your-own/a2a"
+                / project
+                / "uv.lock"
+            )
+            with self.subTest(project=project):
+                self.assertTrue(path.is_file(), f"Missing frozen dependencies: {path}")
+                lock = tomllib.loads(path.read_text(encoding="utf-8"))
+                packages = {package["name"]: package for package in lock["package"]}
+                self.assertEqual(
+                    "1.0.0a20261029006", packages["azure-ai-agentserver-a2a"]["version"]
+                )
+                self.assertEqual(
+                    "2.3.1a20261029006",
+                    packages["azure-ai-agentserver-core"]["version"],
+                )
+                self.assertEqual("0.28.1", packages["httpx"]["version"])
+                for name, package in packages.items():
+                    source = package["source"]
+                    if name in {
+                        "azure-ai-agentserver-a2a",
+                        "azure-ai-agentserver-core",
+                    }:
+                        self.assertEqual(
+                            "https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-python/pypi/simple",
+                            source["registry"].rstrip("/"),
+                        )
+                    elif "registry" in source:
+                        self.assertEqual(
+                            "https://pypi.org/simple", source["registry"].rstrip("/")
+                        )
+                    else:
+                        self.assertEqual({"virtual": "."}, source)
+
     def test_manifests_are_selected_as_native_a2a(self):
         for name in ("echo", "long-running-tasks", "task-persistence"):
             manifest = (

@@ -3,6 +3,7 @@
 import contextlib
 import importlib.util
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -29,19 +30,47 @@ PROJECTS = {
     "report": SAMPLES / "long-running-tasks/src/report-a2a",
     "persistence": SAMPLES / "task-persistence/src/persistent-a2a",
 }
+UV = shutil.which("uv")
+if UV is None:
+    raise RuntimeError("Install uv 0.11.7 or later to run the sample tests")
+
+
+def sample_environment(project):
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(
+            (
+                "FOUNDRY_",
+                "APPLICATIONINSIGHTS_",
+                "OTEL_",
+                "PIP_",
+                "UV_INDEX",
+                "UV_DEFAULT_INDEX",
+                "UV_EXTRA_INDEX",
+            )
+        )
+        and key
+        not in {
+            "PYTHONPATH",
+            "VIRTUAL_ENV",
+            "UV_PROJECT_ENVIRONMENT",
+            "UV_CONFIG_FILE",
+            "UV_PRERELEASE",
+        }
+    }
+    environment["UV_CACHE_DIR"] = str(project.parent / "uv-cache")
+    environment["PYTHONNOUSERSITE"] = "1"
+    return environment
 
 
 @contextlib.contextmanager
-def server(sample, state_root):
+def server(project, state_root):
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
     with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as log:
-        environment = {
-            key: value
-            for key, value in os.environ.items()
-            if not key.startswith(("FOUNDRY_", "APPLICATIONINSIGHTS_", "OTEL_"))
-        }
+        environment = sample_environment(project)
         environment.update(
             PORT=str(port),
             HOST="127.0.0.1",
@@ -50,19 +79,21 @@ def server(sample, state_root):
             PYTHONNOUSERSITE="1",
         )
         process = subprocess.Popen(
-            [sys.executable, "main.py"],
-            cwd=PROJECTS[sample],
+            [UV, "run", "--frozen", "--python", sys.executable, "python", "main.py"],
+            cwd=project,
             env=environment,
             stdout=log,
             stderr=subprocess.STDOUT,
         )
         endpoint = f"http://127.0.0.1:{port}"
         try:
-            deadline = time.monotonic() + 30
+            deadline = time.monotonic() + 180
             while True:
                 if process.poll() is not None:
                     log.seek(0)
-                    raise RuntimeError(f"{sample} exited during startup:\n{log.read()}")
+                    raise RuntimeError(
+                        f"{project.name} exited during startup:\n{log.read()}"
+                    )
                 try:
                     with urlopen(endpoint + "/readiness", timeout=1) as response:
                         if response.status == 200:
@@ -71,7 +102,7 @@ def server(sample, state_root):
                     if time.monotonic() >= deadline:
                         log.seek(0)
                         raise TimeoutError(
-                            f"{sample} did not become ready:\n{log.read()}"
+                            f"{project.name} did not become ready:\n{log.read()}"
                         )
                     time.sleep(0.05)
             yield module.A2AClient(endpoint + "/a2a"), process, log
@@ -86,25 +117,47 @@ def server(sample, state_root):
 
 
 class NativeSampleTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        directory = tempfile.TemporaryDirectory(prefix="native-a2a-frozen-")
+        cls.addClassCleanup(directory.cleanup)
+        cls.projects = {}
+        for name, source in PROJECTS.items():
+            target = Path(directory.name) / name
+            shutil.copytree(
+                source,
+                target,
+                ignore=shutil.ignore_patterns(
+                    ".venv", "__pycache__", "*.pyc", ".task-state"
+                ),
+            )
+            cls.projects[name] = target
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.state_root = Path(self.directory.name) / "state"
 
     def test_echo_with_native_client_and_exact_task_round_trip(self):
-        with server("echo", self.state_root) as (client, _, __):
+        with server(self.projects["echo"], self.state_root) as (client, _, __):
             result = module.run_scenario(
                 client, {"message": "hello", "expected_text": "Echo: hello"}
             )
             self.assertEqual(result["initial_task"], result["task"])
             native = subprocess.run(
                 [
+                    UV,
+                    "run",
+                    "--frozen",
+                    "--python",
                     sys.executable,
+                    "python",
                     "test_client.py",
                     "--endpoint",
                     client.endpoint.removesuffix("/a2a"),
                 ],
-                cwd=PROJECTS["echo"],
+                cwd=self.projects["echo"],
+                env=sample_environment(self.projects["echo"]),
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -114,14 +167,14 @@ class NativeSampleTests(unittest.TestCase):
 
     def test_unicode_and_multiline_artifacts(self):
         text = "hello\n\u00e9\u4f60\u597d\n"
-        with server("echo", self.state_root) as (client, _, __):
+        with server(self.projects["echo"], self.state_root) as (client, _, __):
             result = module.run_scenario(
                 client, {"message": text, "expected_text": f"Echo: {text}"}
             )
             self.assertEqual("TASK_STATE_COMPLETED", result["task"]["status"]["state"])
 
     def test_report_returns_before_completion_and_can_be_polled(self):
-        with server("report", self.state_root) as (client, _, __):
+        with server(self.projects["report"], self.state_root) as (client, _, __):
             result = module.run_scenario(
                 client,
                 {
@@ -139,7 +192,7 @@ class NativeSampleTests(unittest.TestCase):
                 client.rpc("CancelTask", {"id": result["task"]["id"]})
 
     def test_cancellation_stays_terminal_and_emits_no_report(self):
-        with server("report", self.state_root) as (client, _, log):
+        with server(self.projects["report"], self.state_root) as (client, _, log):
             result = module.run_scenario(
                 client,
                 {
@@ -157,7 +210,11 @@ class NativeSampleTests(unittest.TestCase):
             self.assertNotIn("A2A_REPORT_COMPLETED", log.read())
 
     def test_full_snapshot_survives_actual_process_reconstruction(self):
-        with server("persistence", self.state_root) as (writer, process, _):
+        with server(self.projects["persistence"], self.state_root) as (
+            writer,
+            process,
+            _,
+        ):
             result = module.run_scenario(
                 writer,
                 {
@@ -167,7 +224,11 @@ class NativeSampleTests(unittest.TestCase):
                 },
             )
             first_pid = process.pid
-        with server("persistence", self.state_root) as (reader, process, log):
+        with server(self.projects["persistence"], self.state_root) as (
+            reader,
+            process,
+            log,
+        ):
             reader.discover()
             self.assertNotEqual(first_pid, process.pid)
             self.assertEqual(
@@ -196,7 +257,7 @@ class NativeSampleTests(unittest.TestCase):
             )
 
     def test_persistence_separates_local_simulated_callers(self):
-        with server("persistence", self.state_root) as (client, _, __):
+        with server(self.projects["persistence"], self.state_root) as (client, _, __):
             client.headers["x-agent-user-id"] = "sample-user-a"
             result = module.run_scenario(
                 client, {"message": "private", "expected_text": "Persisted: private"}
@@ -207,7 +268,7 @@ class NativeSampleTests(unittest.TestCase):
             self.assertFalse(client.rpc("ListTasks", {"pageSize": 10}).get("tasks"))
 
     def test_reads_do_not_create_absent_task_storage(self):
-        with server("persistence", self.state_root) as (client, _, __):
+        with server(self.projects["persistence"], self.state_root) as (client, _, __):
             before = sorted(
                 path.relative_to(self.state_root) for path in self.state_root.rglob("*")
             )
