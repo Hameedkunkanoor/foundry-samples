@@ -54,8 +54,3 @@ jobs:
           uv run --frozen --python "${{ matrix.python }}" \
             --project samples/python/hosted-agents/bring-your-own/a2a/echo/src/echo-a2a \
             python -m unittest discover -s samples/python/hosted-agents/bring-your-own/a2a/tests -p 'test_*.py' -v
-      - name: Test native three-agent delegation and failure contracts
-        run: |
-          uv run --frozen --python "${{ matrix.python }}" \
-            --project samples/python/hosted-agents/bring-your-own/a2a/release-planner/src/release-planner-a2a \
-            python -m unittest discover -s samples/python/hosted-agents/bring-your-own/a2a/release-planner/tests -p 'test_*.py' -v

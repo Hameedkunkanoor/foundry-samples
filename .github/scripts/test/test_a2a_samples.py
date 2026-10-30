@@ -36,42 +36,6 @@ SCENARIO = {"message": "hello", "expected_text": "Echo: hello"}
 
 
 class A2AHelperTests(unittest.TestCase):
-    def test_scenario_timeout_is_validated_and_applied(self):
-        for timeout in (0, -1, True, 601, float("inf"), "180"):
-            with self.subTest(timeout=timeout), self.assertRaises(spec.SpecError):
-                spec.validate_a2a_input({**SCENARIO, "timeout_seconds": timeout})
-        client = helper.A2AClient("https://example.test/a2a")
-        with patch.object(client, "discover", return_value=CARD), patch.object(
-            client, "rpc", side_effect=[{"task": TASK}, TASK]
-        ):
-            helper.run_scenario(client, {**SCENARIO, "timeout_seconds": 180})
-        self.assertEqual(180, client.timeout)
-
-    def test_llm_artifact_pattern_is_required_and_full_match(self):
-        client = helper.A2AClient("https://example.test/a2a")
-        for pattern, passes in ((r"Echo: h.llo", True), (r"hello", False)):
-            with self.subTest(pattern=pattern), patch.object(
-                client, "discover", return_value=CARD
-            ), patch.object(client, "rpc", side_effect=[{"task": TASK}, TASK]):
-                scenario = {"message": "hello", "expected_pattern": pattern}
-                if passes:
-                    self.assertEqual(
-                        TASK, helper.run_scenario(client, scenario)["task"]
-                    )
-                else:
-                    with self.assertRaisesRegex(ValueError, "required output pattern"):
-                        helper.run_scenario(client, scenario)
-
-    def test_a2a_expectation_requires_one_valid_matcher(self):
-        for scenario in (
-            {"message": "hello"},
-            {"message": "hello", "expected_text": "hello", "expected_pattern": ".*"},
-            {"message": "hello", "expected_pattern": "["},
-            {"message": "hello", "expected_pattern": ""},
-        ):
-            with self.subTest(scenario=scenario), self.assertRaises(spec.SpecError):
-                spec.validate_a2a_input(scenario)
-
     def test_cloud_success_captures_native_exchanges_without_credentials(self):
         requests = []
 
@@ -237,7 +201,6 @@ class A2AContractTests(unittest.TestCase):
             "echo/src/echo-a2a",
             "long-running-tasks/src/report-a2a",
             "task-persistence/src/persistent-a2a",
-            "release-planner/src/release-planner-a2a",
         )
         for project in projects:
             path = ROOT / "samples/python/hosted-agents/bring-your-own/a2a" / project
@@ -274,7 +237,6 @@ class A2AContractTests(unittest.TestCase):
             "echo/src/echo-a2a",
             "long-running-tasks/src/report-a2a",
             "task-persistence/src/persistent-a2a",
-            "release-planner/src/release-planner-a2a",
         ):
             path = (
                 ROOT

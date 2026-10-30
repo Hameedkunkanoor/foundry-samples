@@ -116,14 +116,7 @@ also checks the published fixtures, including orphan detection. See the
 
 The runner supports `responses`, `invocations`, and native `a2a`. A2A uses its
 own Card-discovery and JSON-RPC helper, not the Responses or Invocations client.
-its turn input is a mapping with a `message` and a required output expectation.
-For model-backed output, use `expected_pattern` instead of `expected_text`;
-exactly one is required. Patterns must match the complete artifact text, not
-just a substring. Prefer deterministic structural/delegation evidence over
-matching arbitrary model wording.
-An optional `timeout_seconds` greater than 0 and at most 600 sets the per-request
-timeout and polling budget for slower model-backed scenarios; existing scenarios
-retain their default.
+Its turn input is a mapping with `message` and exact `expected_text` strings.
 Optional booleans are `return_immediately`, `cancel`, and `list_tasks`.
 Cancellation requires `return_immediately: true`. The helper checks Task
 identity, terminal state, exact artifact text and, when requested, listing.
