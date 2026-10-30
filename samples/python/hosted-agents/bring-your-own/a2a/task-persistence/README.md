@@ -1,121 +1,181 @@
 # What this sample demonstrates
 
-Persist a complete native A2A Task, stop the server process, and retrieve the
-same Task from a newly started process. Status, history and artifacts survive;
-the executor does not run again to answer the read.
+A native A2A agent that saves complete Task snapshots for later retrieval.
+Send `remember this result` and receive `Persisted: remember this result`.
+No model deployment or API key is required.
 
 ## How it works
 
-[main.py](src/persistent-a2a/main.py) uses the host's default agent-scoped,
-caller-isolated Foundry store when hosted. Locally it explicitly supplies a
-`FoundryTaskStore`, backed by Core's file storage. The sample closes that
-caller-owned local store during shutdown.
+The executor creates a Task, adds the output artifact and completes it.
+Locally, the sample explicitly uses Core's file-backed `FoundryTaskStore`.
+When hosted, it uses the host's default agent-scoped Foundry store.
 
-`AGENTSERVER_STATE_ROOT` selects the local data directory. Keep this directory
-and the sample namespace unchanged when restarting. A2A Task IDs and context
-IDs are opaque; neither is a Foundry session ID.
+Task snapshots contain status, history and artifacts. Keeping the same local
+data directory and store namespace allows reads after restarting the process.
+See [main.py](src/persistent-a2a/main.py) for the implementation.
+
+Follow the shared [Python startup configuration](../../../README.md#python-startup-configuration)
+for deployment environments and dependency guidance.
 
 ## Prerequisites
 
-- Python 3.10+ and uv 0.11.7. Deployment uses Python 3.13.
-- A writable local data directory; no Azure account is needed for local tests.
-- For deployment: azd 1.27.1+, its `azure.ai.agents` extension, Azure CLI and
-  a Foundry project with native A2A and managed state-store support.
+1. **Python 3.13** and **uv 0.11.7 or later**.
+2. A writable local data directory for local persistence.
+3. For deployment, access to a Foundry project with native A2A and managed
+   state-store support, including the trusted caller-context handoff.
+4. Permission to deploy/invoke agents and use the requested public Task methods.
 
-The project pins A2A `1.0.0a20261029006` and Core `2.3.1a20261029006`.
-The uv configuration automatically gets those two packages from the public
-Azure SDK dev feed and other dependencies from PyPI. The committed lock needs
-no feed flags, environment variables or separate installation commands.
+This preview pins A2A `1.0.0a20261029006` and Core `2.3.1a20261029006`.
+The committed project and lock map those packages to the public Azure SDK dev
+feed; other dependencies come from PyPI. No feed login or global index
+configuration is required.
 
-## Run locally and verify a restart
+## Option 1: Azure Developer CLI (`azd`)
 
-Clone this repository and open `src/persistent-a2a` as your terminal directory:
+### Prerequisites
+
+Use azd **1.37.2** and agent extension **1.0.0-beta.23**, the tested versions.
+For a first extension installation, replace `update` with `install`.
 
 ```powershell
-uv run --frozen python main.py
+azd extension update azure.ai.agents --version 1.0.0-beta.23 --source azd
+azd auth login
+$env:AZD_ALPHA_ENABLE_AGENTS_A2A = "true"
 ```
 
-The first run creates `.venv` and installs dependencies automatically. Local
-snapshots use Core's default directory under your home, `.agentserver`.
-`AGENTSERVER_STATE_ROOT` is optional if you want a different data directory.
+Set the switch in each terminal. Confirm subscription/service enablement with
+the project owner; the CLI switch alone does not enable managed persistence.
 
-From another terminal at the repository root:
+### Initialize the agent project
+
+Create an empty folder and open a terminal there. Replace `<PROJECT-ARM-ID>`
+and choose a unique agent name:
 
 ```powershell
-python .azure-pipelines\scripts\hosted-agents\scripts\invoke_hosted_agent_a2a.py `
-  --message "remember this result" --expected-text "Persisted: remember this result" `
-  --list-tasks
+azd ai agent init --src . `
+  -t "https://github.com/Hameedkunkanoor/foundry-samples/blob/43409818cf6472a15a1d11d01bc7f1f0ec41fa2a/samples/python/hosted-agents/bring-your-own/a2a/task-persistence/azure.yaml" `
+  --project-id "<PROJECT-ARM-ID>" --agent-name "persistent-youralias-01" --no-prompt
 ```
 
-Copy the printed Task ID. Stop the server with Ctrl+C, start it again from the
-same terminal and data directory, then run:
+azd adopts the sample's [azure.yaml](azure.yaml) in the current directory.
+For a local clone, use this sample's absolute manifest path instead of the
+GitHub URL.
+
+### Provision Azure resources (if needed)
+
+Skip provisioning for this existing-project path.
+Do not run `azd provision` or `azd down` against shared resources.
+
+### Run the agent locally
 
 ```powershell
-python .azure-pipelines\scripts\hosted-agents\scripts\invoke_hosted_agent_a2a.py `
-  --task-id "<task-id>"
+uv venv --python 3.13 ".\src\persistent-a2a\.venv"
+azd ai agent run --no-client --start-command "python main.py"
 ```
 
-Expected state is `TASK_STATE_COMPLETED`, with the exact artifact
-`Persisted: remember this result`. This last command sends only `GetTask`;
-it does not repeat `SendMessage`.
+The server listens on `http://localhost:8088`.
+Local snapshots default to `.agentserver` under your home directory;
+`AGENTSERVER_STATE_ROOT` optionally selects another location.
 
-For VS Code debugging afterward, open `src/persistent-a2a` and select the
-generated `.venv` interpreter. Keep the same data directory for each run;
-the default needs no environment configuration.
+Beta.23 cannot invoke A2A with `azd ai agent invoke --local`.
+The [sample tests](../README.md#tests) verify local write/restart/read behavior;
+use the hosted path below for CLI messages.
 
-## Deploy with azd
+### Deploy to Foundry
 
-From this sample directory, authenticate with `az login` and `azd auth login`,
-choose a unique agent name in [azure.yaml](azure.yaml), and run:
+Stop the local server with Ctrl+C. From the initialized project root:
 
 ```powershell
-azd env new a2a-persistence-demo
-azd provision
-azd deploy
+azd deploy persistent-a2a --no-prompt
 azd ai agent show --output json
 ```
 
-No model or Dockerfile is required. For public verification, add
-`--endpoint "<agent_endpoints.a2a>" --azure-auth` to the verifier commands.
-The public gateway must support the requested send/get/list methods.
+Confirm `active` status and copy the deployed version.
+No model or Dockerfile is required.
 
-Hosted storage uses the platform's authenticated caller context. Do not
-replace it with user-supplied identity headers. Reads must use the same
-authenticated principal and agent storage namespace as the write. Another
-caller must not obtain the saved Task.
-
-The automated local restart test proves file-backed persistence across
-independent processes. The cloud contract proves managed save/get/list; it
-does not forcibly restart a hosted container or prove execution recovery.
-
-## Tests and tracing
-
-From the repository root:
+### Invoke the deployed agent
 
 ```powershell
-uv run --frozen --project samples\python\hosted-agents\bring-your-own\a2a\echo\src\echo-a2a `
-  python -m unittest discover -s samples\python\hosted-agents\bring-your-own\a2a\tests -p "test_*.py" -v
+azd ai agent invoke -p a2a --a2a-version 1.0 --version "<VERSION>" --new-session "remember this result"
 ```
 
-Tests compare full native Task snapshots after stopping the writer and starting
-a reader. They also verify listing, missing-store reads without creation, and
-local simulated-caller separation. The latter is not a cloud authentication test.
-The [cloud contract](../../../../../../.azure-pipelines/hosted-agent-tests/python/bring-your-own/a2a/task-persistence/test-spec.yml)
-uses native A2A save/get/list assertions.
+Expected answer: `Persisted: remember this result`.
+Add `--output raw` to inspect the completed Task and copy its ID.
 
-With an OpenTelemetry exporter configured, inspect the A2A operation spans and
-the `A2A_PERSISTED` log. Restart reads must not produce that executor log.
+## Option 2: VS Code (manual Python debugging)
+
+1. Install the VS Code Python extension and open `src/persistent-a2a`.
+2. Start once to create the locked environment:
+
+   ```powershell
+   uv run --frozen --python 3.13 python main.py
+   ```
+
+3. Stop with Ctrl+C and select the generated `.venv` using
+   **Python: Select Interpreter**.
+4. Open [main.py](src/persistent-a2a/main.py), set breakpoints and choose
+   **Python Debugger: Debug Python File**.
+5. Keep the same data directory when restarting.
+
+Use an A2A client for local requests; no Agent Inspector integration is assumed.
+Use Option 1 to deploy and invoke on Foundry.
+
+## Retrieve and list saved Tasks
+
+From the initialized azd project, save this as `get-task.json`, replacing the
+ID with the Task returned by the write:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "read-1",
+  "method": "GetTask",
+  "params": {"id": "<TASK-ID>"}
+}
+```
+
+```powershell
+azd ai agent invoke -p a2a --a2a-version 1.0 --version "<VERSION>" --input-file get-task.json --output raw
+```
+
+Expected: the same Task ID, completed status and artifact. This read must not
+send the original message or rerun the executor.
+
+To list that conversation's Tasks, save this as `list-tasks.json`, replacing
+`<CONTEXT-ID>` with the context returned by the write:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "list-1",
+  "method": "ListTasks",
+  "params": {"contextId": "<CONTEXT-ID>", "pageSize": 10}
+}
+```
+
+```powershell
+azd ai agent invoke -p a2a --a2a-version 1.0 --version "<VERSION>" --input-file list-tasks.json --output raw
+```
+
+Use the same authenticated caller and agent namespace. Never inject identity
+headers or weaken isolation to make a read succeed.
+
+Retrieval alone does not prove a container restart. The
+[automated local restart test](../README.md#tests) compares complete Tasks
+after stopping the writer and starting a new reader process. Hosted restart
+verification additionally needs evidence of distinct runtimes.
+Saving a Task does not automatically recover unfinished executor work.
 
 ## Troubleshooting
 
-- Task missing after local restart: check the data directory, namespace and
-  caller context. Do not send a new message as a retrieval workaround.
-- Storage authorization error: check the hosted identity/state-store setup.
-- Public method rejected: check native A2A availability on the target project.
-- Dependency download failure: check network access to PyPI and the public
-  Azure SDK dev feed; no feed credentials should be required.
-- The repository's PyPI-only policy still requires review of dev-feed usage;
-  see the [shared dependency-policy note](../README.md#repository-dependency-policy).
+- **Task missing after restart:** check the data directory, namespace and caller.
+  Do not resend the original message as a retrieval workaround.
+- **Storage authorization error:** check managed storage permissions and trusted
+  caller-context handoff. Do not substitute anonymous state.
+- **Public Task method rejected:** confirm native gateway availability.
+- **Download/TLS error:** check access to PyPI and the public dev feed without
+  changing the pins or disabling certificate verification.
+- **CLI flags are missing:** check beta.23 and the A2A feature switch.
 
 ## Next steps
 
