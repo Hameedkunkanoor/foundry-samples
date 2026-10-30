@@ -403,12 +403,38 @@ def validate_a2a_input(value: Any) -> None:
     value = _require_mapping(value, "A2A turn input")
     _require_keys(
         value,
-        {"message", "expected_text", "return_immediately", "cancel", "list_tasks"},
+        {
+            "message",
+            "expected_text",
+            "expected_pattern",
+            "return_immediately",
+            "cancel",
+            "list_tasks",
+            "timeout_seconds",
+        },
         "A2A turn input",
-        {"message", "expected_text"},
+        {"message"},
     )
     _require_string(value["message"], "A2A turn input.message")
-    _require_string(value["expected_text"], "A2A turn input.expected_text", nonempty=False)
+    if ("expected_text" in value) == ("expected_pattern" in value):
+        raise SpecError(
+            "A2A turn input requires exactly one of expected_text or expected_pattern"
+        )
+    if "expected_text" in value:
+        _require_string(
+            value["expected_text"], "A2A turn input.expected_text", nonempty=False
+        )
+    else:
+        _compile_regex(value["expected_pattern"], "A2A turn input.expected_pattern")
+    if "timeout_seconds" in value:
+        timeout = value["timeout_seconds"]
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout)
+            or not 0 < timeout <= 600
+        ):
+            raise SpecError("A2A turn input.timeout_seconds must be greater than 0 and at most 600")
     for key in ("return_immediately", "cancel", "list_tasks"):
         if key in value and not isinstance(value[key], bool):
             raise SpecError(f"A2A turn input.{key} must be a boolean")

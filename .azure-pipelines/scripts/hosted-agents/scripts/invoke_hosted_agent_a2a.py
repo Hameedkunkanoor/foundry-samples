@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import uuid
@@ -98,6 +99,8 @@ class A2AClient:
 
 def run_scenario(client: A2AClient, scenario: dict[str, Any]) -> dict[str, Any]:
     validate_a2a_input(scenario)
+    if "timeout_seconds" in scenario:
+        client.timeout = scenario["timeout_seconds"]
     card = client.discover()
     initial = client.rpc(
         "SendMessage",
@@ -140,9 +143,13 @@ def run_scenario(client: A2AClient, scenario: dict[str, Any]) -> dict[str, Any]:
         for artifact in task.get("artifacts", [])
         for part in artifact.get("parts", [])
     )
-    expected = "" if canceled else scenario["expected_text"]
-    if text != expected:
-        raise ValueError(f"Expected artifact text {expected!r}, received {text!r}")
+    if not canceled and "expected_pattern" in scenario:
+        if re.fullmatch(scenario["expected_pattern"], text) is None:
+            raise ValueError("Artifact did not match the required output pattern")
+    else:
+        expected = "" if canceled else scenario["expected_text"]
+        if text != expected:
+            raise ValueError(f"Expected artifact text {expected!r}, received {text!r}")
     listed_ids = []
     if scenario.get("list_tasks", False):
         page = client.rpc(

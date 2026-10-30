@@ -1,0 +1,18 @@
+version: 1
+sample:
+  owner: hkunkanoor
+  experiences: [azd]
+tests:
+  - name: real-specialist-delegation
+    turns:
+      - input:
+          message: Plan a staged release of search filters for 20 internal testers. Include tests and rollback. Budget is undecided.
+          expected_pattern: '(?s)\{"role": "coordinator", "run_id": "[a-f0-9]+", "delegation_verified": true, "plan": ".+", "delegations": \[\{"role": "scope", .+"task_id": "[^"]+"\}, \{"role": "risk", .+"task_id": "[^"]+"\}\]\}'
+          timeout_seconds: 240
+        assertions:
+          - source: raw
+            type: contains
+            value: '"delegation_verified": true'
+          - source: raw
+            type: contains
+            value: TASK_STATE_COMPLETED

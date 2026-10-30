@@ -1,13 +1,15 @@
 # Native A2A hosted-agent samples
 
-Three deterministic Python samples using `azure-ai-agentserver-a2a` and the
-official native A2A SDK. No model deployment is required.
+Native Python A2A samples using `azure-ai-agentserver-a2a` and the official
+native A2A SDK. The first three need no model; Release Planner adds real
+LLM-backed multi-agent collaboration.
 
 | Sample | What you learn |
 |---|---|
 | [Echo](echo/README.md) | Send a message and receive a completed Task |
 | [Long-running Tasks](long-running-tasks/README.md) | Submit, poll and cancel report work |
 | [Task persistence](task-persistence/README.md) | Save, retrieve and list complete Task snapshots |
+| [Three-agent Release Planner](release-planner/README.md) | Delegate to scope/risk specialists over A2A, call a real model and verify remote evidence |
 
 Each README follows the shared hosted-agent template: prerequisites, an azd
 run/deploy/invoke path, manual VS Code debugging, and sample-specific examples.
