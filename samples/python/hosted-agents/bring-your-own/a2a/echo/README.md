@@ -23,19 +23,16 @@ The host selects memory locally and caller-isolated Foundry storage when hosted.
 - For deployment only: Azure CLI, azd 1.27.1+ with the `azure.ai.agents`
   extension, and access to a Foundry project in a supported hosted-agent region.
 
-> **SDK publication gate:** This sample targets A2A `1.0.0b1` and Core `2.3.0b3`.
-> Both must be available on PyPI before generating and committing `uv.lock`.
-> Until then, frozen installation and deployment are blocked. The PR stays
-> draft; do not substitute a private feed or bypass dependency validation.
+The project pins A2A `1.0.0a20261029006` and Core `2.3.1a20261029006`.
+Its `pyproject.toml` maps those two packages to the public Azure SDK dev feed;
+all other packages come from PyPI. The committed lock makes installation
+automatic. No feed login, index flags or environment variables are needed.
 
 ## Run locally
 
-Clone this repository and open this sample directory. Once the publication gate
-is satisfied:
+Clone this repository and open `src/echo-a2a` as your terminal directory:
 
 ```powershell
-cd src\echo-a2a
-uv sync --frozen --python 3.13
 uv run --frozen python main.py
 ```
 
@@ -49,9 +46,10 @@ The [client](src/echo-a2a/test_client.py) uses the official A2A client, checks t
 exact artifact and completed state, then verifies `GetTask` returns the same
 Task. Output includes `task_id=...` and `Echo: hello`.
 
-To debug, open `src/echo-a2a` in VS Code, install the Python extension, select
-its `.venv` interpreter, and debug `main.py` as a Python file. Run the native
-client in another terminal. No Inspector integration is required.
+The first run creates `.venv` and downloads the frozen dependencies automatically.
+To debug afterward, open `src/echo-a2a` in VS Code, install the Python extension,
+select that `.venv` interpreter, and debug `main.py` as a Python file. Run the
+native client in another terminal. No Inspector integration is required.
 
 ## Deploy with azd
 
@@ -85,16 +83,15 @@ artifacts fail explicitly.
 
 ## Tests and tracing
 
-From the repository root, using an interpreter containing the sample dependencies:
+From the repository root:
 
 ```powershell
-python .github\scripts\test\test_a2a_samples.py
-python -m unittest discover -s samples\python\hosted-agents\bring-your-own\a2a\tests -p "test_*.py" -v
+uv run --frozen --project samples\python\hosted-agents\bring-your-own\a2a\echo\src\echo-a2a `
+  python -m unittest discover -s samples\python\hosted-agents\bring-your-own\a2a\tests -p "test_*.py" -v
 ```
 
-The credential-free GitHub workflow runs helper/contract tests and real-HTTP
-sample tests. Its frozen dependency job deliberately fails until the publication
-gate is satisfied. The cloud pipeline uses the sample's
+The credential-free GitHub workflow runs helper/contract tests and starts fresh
+runtime copies with the same automatic uv command. The cloud pipeline uses the sample's
 [native behavior contract](../../../../../../.azure-pipelines/hosted-agent-tests/python/bring-your-own/a2a/echo/test-spec.yml).
 No A2A sample exclusion is required.
 
@@ -105,12 +102,15 @@ capture unless appropriate for the data.
 
 ## Troubleshooting
 
-- Missing `uv.lock` or unresolved SDK pins: the publication gate is not satisfied.
+- Dependency download failure: check access to PyPI and the public Azure SDK
+  dev feed. No credentials or global feed configuration should be required.
 - Local discovery failure: use `/a2a/.well-known/agent-card.json`, not the
   Foundry public Card path.
 - Version error: send `A2A-Version: 1.0`.
 - Public lookup/authorization failure: check the project, deployment and native
   A2A availability. Do not add a different protocol as an invocation fallback.
+- The repository's PyPI-only policy still requires review of dev-feed usage;
+  see the [shared dependency-policy note](../README.md#repository-dependency-policy).
 
 ## Next steps
 

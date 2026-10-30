@@ -256,7 +256,8 @@ class A2AContractTests(unittest.TestCase):
                     packages["azure-ai-agentserver-core"]["version"],
                 )
                 self.assertEqual("0.28.1", packages["httpx"]["version"])
-                for name, package in packages.items():
+                for package in lock["package"]:
+                    name = package["name"]
                     source = package["source"]
                     if name in {
                         "azure-ai-agentserver-a2a",
@@ -321,6 +322,13 @@ class A2AContractTests(unittest.TestCase):
             spec.build_plan(document, protocol="a2a")
 
     def test_a2a_is_wired_to_its_own_runner_without_a_sample_skip(self):
+        workflow = (ROOT / ".github/workflows/a2a-samples.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("uv run --frozen", workflow)
+        self.assertNotIn("uv sync", workflow)
+        self.assertNotIn("--index-url", workflow)
+        self.assertNotIn("author-locks", workflow)
         runner = (
             ROOT / ".azure-pipelines/scripts/hosted-agents/run-hosted-agent.sh"
         ).read_text(encoding="utf-8")

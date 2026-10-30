@@ -11,9 +11,12 @@ is needed. Do not commit Toolkit-generated `.vscode` files.
 ## Dependencies
 
 Follow `samples/python/hosted-agents/DEPENDENCY_POLICY.md`. Runtime inputs are in
-`src/echo-a2a/pyproject.toml`. A2A `1.0.0b1` and Core `2.3.0b3` publication is a
-merge gate: generate and commit `uv.lock` from PyPI only after both are available.
-Never commit local wheels, private-feed configuration or fabricated lock data.
+`src/echo-a2a/pyproject.toml`. The published A2A/Core alpha pins intentionally
+use an explicit public dev-feed index; other dependencies must use PyPI.
+Generate and commit `uv.lock` with uv 0.11.7. Preserve one-command
+`uv run --frozen python main.py` startup without manual installs or feed flags.
+Never commit credentials, local wheels or fabricated lock data. The shared
+PyPI-only policy remains enforced; no exception has been approved.
 
 ## Development and validation
 
@@ -26,7 +29,8 @@ From the repository root, run:
 
 ```powershell
 python .github\scripts\test\test_a2a_samples.py
-python -m unittest discover -s samples\python\hosted-agents\bring-your-own\a2a\tests -p "test_*.py" -v
+uv run --frozen --project samples\python\hosted-agents\bring-your-own\a2a\echo\src\echo-a2a `
+  python -m unittest discover -s samples\python\hosted-agents\bring-your-own\a2a\tests -p "test_*.py" -v
 ```
 
 The sample's public cloud behavior contract is under

@@ -22,21 +22,22 @@ IDs are opaque; neither is a Foundry session ID.
 - For deployment: azd 1.27.1+, its `azure.ai.agents` extension, Azure CLI and
   a Foundry project with native A2A and managed state-store support.
 
-> **SDK publication gate:** Publish A2A `1.0.0b1` and Core `2.3.0b3` on PyPI,
-> then generate and commit `uv.lock`. Frozen installation and deployment are
-> blocked until the lock and public dependency checks pass.
+The project pins A2A `1.0.0a20261029006` and Core `2.3.1a20261029006`.
+The uv configuration automatically gets those two packages from the public
+Azure SDK dev feed and other dependencies from PyPI. The committed lock needs
+no feed flags, environment variables or separate installation commands.
 
 ## Run locally and verify a restart
 
-Clone this repository. From this sample directory, after the publication gate
-is satisfied:
+Clone this repository and open `src/persistent-a2a` as your terminal directory:
 
 ```powershell
-cd src\persistent-a2a
-uv sync --frozen --python 3.13
-$env:AGENTSERVER_STATE_ROOT = Join-Path $PWD ".task-state"
 uv run --frozen python main.py
 ```
+
+The first run creates `.venv` and installs dependencies automatically. Local
+snapshots use Core's default directory under your home, `.agentserver`.
+`AGENTSERVER_STATE_ROOT` is optional if you want a different data directory.
 
 From another terminal at the repository root:
 
@@ -58,9 +59,9 @@ Expected state is `TASK_STATE_COMPLETED`, with the exact artifact
 `Persisted: remember this result`. This last command sends only `GetTask`;
 it does not repeat `SendMessage`.
 
-For VS Code debugging, open `src/persistent-a2a`, select its `.venv`
-interpreter and set `AGENTSERVER_STATE_ROOT` in the debug environment. Use the
-same directory for each debug run.
+For VS Code debugging afterward, open `src/persistent-a2a` and select the
+generated `.venv` interpreter. Keep the same data directory for each run;
+the default needs no environment configuration.
 
 ## Deploy with azd
 
@@ -89,11 +90,11 @@ does not forcibly restart a hosted container or prove execution recovery.
 
 ## Tests and tracing
 
-From the repository root, using an interpreter with the runtime dependencies:
+From the repository root:
 
 ```powershell
-python .github\scripts\test\test_a2a_samples.py
-python -m unittest discover -s samples\python\hosted-agents\bring-your-own\a2a\tests -p "test_*.py" -v
+uv run --frozen --project samples\python\hosted-agents\bring-your-own\a2a\echo\src\echo-a2a `
+  python -m unittest discover -s samples\python\hosted-agents\bring-your-own\a2a\tests -p "test_*.py" -v
 ```
 
 Tests compare full native Task snapshots after stopping the writer and starting
@@ -111,7 +112,10 @@ the `A2A_PERSISTED` log. Restart reads must not produce that executor log.
   caller context. Do not send a new message as a retrieval workaround.
 - Storage authorization error: check the hosted identity/state-store setup.
 - Public method rejected: check native A2A availability on the target project.
-- Missing lock or unresolved dependencies: the SDK publication gate is open.
+- Dependency download failure: check network access to PyPI and the public
+  Azure SDK dev feed; no feed credentials should be required.
+- The repository's PyPI-only policy still requires review of dev-feed usage;
+  see the [shared dependency-policy note](../README.md#repository-dependency-policy).
 
 ## Next steps
 

@@ -23,18 +23,16 @@ cannot subsequently be canceled.
 - For deployment: azd 1.27.1+, its `azure.ai.agents` extension, Azure CLI, and
   a Foundry project supporting native A2A send/get/cancel operations.
 
-> **SDK publication gate:** A2A `1.0.0b1` and Core `2.3.0b3` must be published
-> on PyPI, then `uv.lock` must be generated and committed. Frozen installation
-> and deployment remain blocked until that happens. Do not bypass the policy.
+The project pins A2A `1.0.0a20261029006` and Core `2.3.1a20261029006`.
+The checked-in uv configuration fetches only those packages from the public
+Azure SDK dev feed; other dependencies come from PyPI. No feed setup or
+separate dependency installation is needed.
 
 ## Run locally
 
-Clone this repository. From this sample directory, once the publication gate
-is satisfied:
+Clone this repository and open `src/report-a2a` as your terminal directory:
 
 ```powershell
-cd src\report-a2a
-uv sync --frozen --python 3.13
 uv run --frozen python main.py
 ```
 
@@ -60,8 +58,9 @@ python .azure-pipelines\scripts\hosted-agents\scripts\invoke_hosted_agent_a2a.py
 The verifier checks both the cancellation response and the saved canceled
 snapshot. A client timeout is not a cancellation request.
 
-For VS Code debugging, open `src/report-a2a`, select its `.venv` interpreter,
-and debug `main.py`. Run the verifier in a second terminal.
+The first run creates `.venv` and installs the locked dependencies automatically.
+For VS Code debugging afterward, open `src/report-a2a`, select that `.venv`
+interpreter, and debug `main.py`. Run the verifier in a second terminal.
 
 ## Deploy with azd
 
@@ -82,11 +81,11 @@ container readiness alone is not public gateway validation.
 
 ## Tests and tracing
 
-From the repository root, in an interpreter with the runtime dependencies:
+From the repository root:
 
 ```powershell
-python .github\scripts\test\test_a2a_samples.py
-python -m unittest discover -s samples\python\hosted-agents\bring-your-own\a2a\tests -p "test_*.py" -v
+uv run --frozen --project samples\python\hosted-agents\bring-your-own\a2a\echo\src\echo-a2a `
+  python -m unittest discover -s samples\python\hosted-agents\bring-your-own\a2a\tests -p "test_*.py" -v
 ```
 
 Tests use real server processes and HTTP. They verify an initial unfinished
@@ -107,12 +106,15 @@ that needs execution recovery requires an application-level durable workflow.
 
 ## Troubleshooting
 
-- Missing lock or unresolved SDK packages: the publication gate is still open.
+- Dependency download failure: verify network access to PyPI and the public
+  Azure SDK dev feed. Do not enable prereleases globally.
 - No immediate response: ensure `configuration.returnImmediately` is true.
 - Unexpected terminal state or JSON-RPC error: inspect the captured evidence;
   the verifier does not turn failures into successful reports.
 - Public method rejected: verify the target project's native A2A support before
   assuming the local endpoint and public gateway expose identical operations.
+- The repository's PyPI-only policy still requires review of dev-feed usage;
+  see the [shared dependency-policy note](../README.md#repository-dependency-policy).
 
 ## Next steps
 
