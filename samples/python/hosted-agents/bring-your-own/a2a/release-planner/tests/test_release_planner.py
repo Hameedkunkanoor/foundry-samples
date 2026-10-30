@@ -12,7 +12,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 from urllib.request import urlopen
 
 import httpx2 as httpx
@@ -27,6 +27,33 @@ PROJECT = "https://example.services.ai.azure.com/api/projects/test"
 
 
 class ContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_hosted_a2a_headers_use_the_agent_credential(self):
+        with patch.dict(
+            os.environ,
+            {
+                "FOUNDRY_AGENT_INSTANCE_CLIENT_ID": "11111111-1111-1111-1111-111111111111"
+            },
+        ):
+            services = module.Services(PROJECT, "test-model", True)
+        default = services.credential
+        agent = services.agent_credential
+        services.credential = SimpleNamespace(
+            get_token=AsyncMock(return_value=SimpleNamespace(token="model-token")),
+            close=AsyncMock(),
+        )
+        services.agent_credential = SimpleNamespace(
+            get_token=AsyncMock(return_value=SimpleNamespace(token="agent-token")),
+            close=AsyncMock(),
+        )
+        try:
+            headers = await services.headers(True, agent_identity=True)
+            self.assertEqual("Bearer agent-token", headers["Authorization"])
+            services.credential.get_token.assert_not_awaited()
+        finally:
+            await services.close()
+            await default.close()
+            await agent.close()
+
     async def test_coordinator_never_synthesizes_when_a_specialist_fails(self):
         services = SimpleNamespace(
             specialist=AsyncMock(side_effect=RuntimeError("remote agent unavailable")),

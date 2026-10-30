@@ -16,7 +16,7 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill
-from azure.identity.aio import DefaultAzureCredential
+from azure.identity.aio import DefaultAzureCredential, ManagedIdentityCredential
 from opentelemetry import propagate, trace
 
 from azure.ai.agentserver.a2a import A2AAgentServerHost
@@ -81,17 +81,29 @@ class Services:
         self.model = model
         self.hosted = hosted
         self.credential = DefaultAzureCredential()
+        self.agent_credential = (
+            ManagedIdentityCredential(
+                client_id=os.environ["FOUNDRY_AGENT_INSTANCE_CLIENT_ID"]
+            )
+            if hosted
+            else self.credential
+        )
         self.http = httpx.AsyncClient(timeout=httpx.Timeout(180, connect=15))
 
     async def close(self) -> None:
         await self.http.aclose()
         await self.credential.close()
+        if self.agent_credential is not self.credential:
+            await self.agent_credential.close()
 
-    async def headers(self, authenticated: bool) -> dict[str, str]:
+    async def headers(
+        self, authenticated: bool, *, agent_identity: bool = False
+    ) -> dict[str, str]:
         headers = {"Accept": "application/json"}
         propagate.inject(headers)
         if authenticated:
-            token = await self.credential.get_token("https://ai.azure.com/.default")
+            credential = self.agent_credential if agent_identity else self.credential
+            token = await credential.get_token("https://ai.azure.com/.default")
             headers["Authorization"] = "Bearer " + token.token
             headers.update(get_request_context().platform_headers())
         return headers
@@ -137,7 +149,9 @@ class Services:
     ) -> dict:
         check_endpoint(endpoint, self.project, self.hosted)
         with TRACER.start_as_current_span("release.delegate." + role):
-            headers = await self.headers(endpoint.startswith("https://"))
+            headers = await self.headers(
+                endpoint.startswith("https://"), agent_identity=self.hosted
+            )
             headers["A2A-Version"] = "1.0"
             parsed = urlsplit(endpoint)
             card_path = (

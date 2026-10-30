@@ -37,6 +37,9 @@ become input to synthesis.
 The model uses the project's Responses endpoint with managed credentials and
 the current platform call context. This is a model call, not a Responses-agent
 substitute for the native A2A delegation.
+Hosted outbound A2A explicitly selects the agent instance's managed identity
+using `FOUNDRY_AGENT_INSTANCE_CLIENT_ID`; it does not rely on an unspecified
+default identity. Model calls retain the ordinary default credential.
 
 Follow the shared [Python startup configuration](../../../README.md#python-startup-configuration).
 
@@ -280,7 +283,7 @@ Separate live validation used real `gpt-5-nano` calls:
 |---|---|
 | Three local native A2A agents + real model | Passed; two distinct specialist Task/execution IDs |
 | Local coordinator + two Foundry-hosted specialists + real model | Passed; both hosted specialist results verified |
-| All three agents deployed | Active scope v2, risk v1, coordinator v1 |
+| All three agents deployed | Active scope v2, risk v1, coordinator v2 |
 | Fully hosted coordinator delegation | Blocked: missing target consumer access; approved grant failed with `RoleAssignmentLimitExceeded` |
 | Managed A2A Toolbox | Documentation/connection inventory inspected; not created or invoked |
 
