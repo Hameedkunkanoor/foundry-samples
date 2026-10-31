@@ -1,5 +1,5 @@
 [project]
-name = "foundry-a2a-release-planner"
+name = "foundry-a2a-toolbox-travel"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [

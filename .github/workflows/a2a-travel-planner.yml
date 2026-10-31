@@ -1,16 +1,16 @@
-name: Native A2A Release Planner
+name: Native A2A Toolbox Travel Planner
 
 on:
   workflow_dispatch:
   pull_request:
     paths:
-      - 'samples/python/hosted-agents/bring-your-own/a2a/release-planner/**'
-      - '.azure-pipelines/hosted-agent-tests/python/bring-your-own/a2a/release-planner/**'
+      - 'samples/python/hosted-agents/bring-your-own/a2a/travel-planner/**'
+      - '.azure-pipelines/hosted-agent-tests/python/bring-your-own/a2a/travel-planner/**'
       - '.azure-pipelines/scripts/hosted-agents/**'
       - '.github/scripts/hosted_agent_test_spec.py'
       - '.github/scripts/check_hosted_agent_contracts.py'
-      - '.github/scripts/test/test_a2a_release_planner_harness.py'
-      - '.github/workflows/a2a-release-planner.yml'
+      - '.github/scripts/test/test_a2a_model_harness.py'
+      - '.github/workflows/a2a-travel-planner.yml'
 
 permissions:
   contents: read
@@ -33,17 +33,17 @@ jobs:
       - run: python -m pip install uv==0.11.7 -r .github/scripts/requirements.txt
       - name: Validate native cloud contract and harness
         run: |
-          python .github/scripts/test/test_a2a_release_planner_harness.py
+          python .github/scripts/test/test_a2a_model_harness.py
           python .github/scripts/hosted_agent_test_spec.py validate \
-            --spec .azure-pipelines/hosted-agent-tests/python/bring-your-own/a2a/release-planner/test-spec.yml
+            --spec .azure-pipelines/hosted-agent-tests/python/bring-your-own/a2a/travel-planner/test-spec.yml
           python .github/scripts/hosted_agent_test_spec.py plan --protocol a2a \
-            --spec .azure-pipelines/hosted-agent-tests/python/bring-your-own/a2a/release-planner/test-spec.yml \
-            --output "$RUNNER_TEMP/release-plan.json"
+            --spec .azure-pipelines/hosted-agent-tests/python/bring-your-own/a2a/travel-planner/test-spec.yml \
+            --output "$RUNNER_TEMP/travel-plan.json"
           bash -n .azure-pipelines/scripts/hosted-agents/discover-samples.sh
           bash -n .azure-pipelines/scripts/hosted-agents/run-hosted-agent.sh
-      - name: Test real native HTTP delegation and failure contracts
+      - name: Test native HTTP workers and Toolbox planner failure contracts
         run: |
           uv run --frozen --python "${{ matrix.python }}" \
-            --project samples/python/hosted-agents/bring-your-own/a2a/release-planner/src/release-planner-a2a \
+            --project samples/python/hosted-agents/bring-your-own/a2a/travel-planner/src/travel-a2a \
             python -m unittest discover \
-            -s samples/python/hosted-agents/bring-your-own/a2a/release-planner/tests -p 'test_*.py' -v
+            -s samples/python/hosted-agents/bring-your-own/a2a/travel-planner/tests -p 'test_*.py' -v

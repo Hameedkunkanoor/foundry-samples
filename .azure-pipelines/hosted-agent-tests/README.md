@@ -131,9 +131,12 @@ Polling is bounded; protocol errors fail without resubmitting the business work.
 Raw evidence contains the verified scenario result, while per-attempt A2A
 evidence records the actual JSON-RPC exchanges without authorization headers.
 
-The Release Planner tests start three real local server processes and validate
-delegation with fixture model responses; live model/identity checks remain
-separate. The cloud scenario does not forcibly restart a hosted container.
+The Toolbox Travel Planner tests run real local native A2A workers and validate
+discovery, model tool choice and failure contracts with fixture model/MCP responses.
+Live model/Toolbox/identity checks remain separate. The travel cloud fixture
+requires a configured versioned Toolbox with deployed Flight/Hotel connections;
+it is not a standalone automated three-agent/Toolbox provisioner.
+The cloud scenario does not forcibly restart a hosted container.
 Other protocols require dedicated harnesses:
 
 - `invocations_ws` uses sample-defined, full-duplex WebSocket frames.

@@ -1,4 +1,4 @@
-"""Credential-free native A2A output contract regressions."""
+"""Credential-free native A2A model-output contract regressions."""
 
 import importlib.util
 import json

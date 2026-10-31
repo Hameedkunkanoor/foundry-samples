@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
-name: native-a2a-release-planner
+name: a2a-toolbox-travel
 requiredVersions:
   azd: '>=1.37.2'
   extensions:
@@ -7,97 +7,88 @@ requiredVersions:
 services:
   ai-project:
     host: azure.ai.project
-  scope:
+  flights:
     host: azure.ai.agent
-    project: src/release-planner-a2a
+    project: src/travel-a2a
     language: python
     kind: hosted
-    name: release-scope
+    name: travel-flights
     uses: [ai-project]
-    codeConfiguration:
-      runtime: python_3_13
-      entryPoint: main.py
+    codeConfiguration: {runtime: python_3_13, entryPoint: main.py}
     protocols:
       - protocol: a2a
         version: 1.0.0
     agentEndpoint:
       protocols: [a2a, responses]
     agentCard:
-      description: Assesses release scope using a model.
+      description: Flight Agent queries a synthetic round-trip inventory. Input is a JSON query encoded as text.
       version: 1.0.0
       skills:
-        - id: scope
-          name: Scope
-          description: Assess deliverables, dependencies and acceptance criteria.
-          tags: [release-planning]
+        - id: flights
+          name: Flight Agent
+          description: 'JSON fields: origin, destination, departure_date, return_date, arrive_by (timezone ISO timestamp), travelers (integer), refundable (boolean).'
+          tags: [synthetic-travel, flights]
     env:
       PYTHONNOUSERSITE: '1'
-      AGENT_ROLE: scope
-      AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+      AGENT_ROLE: flights
       OTEL_INSTRUMENTATION_A2A_SDK_ENABLED: 'false'
       OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: 'false'
     container:
       resources: {cpu: '0.5', memory: 1Gi}
-  risk:
+  hotels:
     host: azure.ai.agent
-    project: src/release-planner-a2a
+    project: src/travel-a2a
     language: python
     kind: hosted
-    name: release-risk
+    name: travel-hotels
     uses: [ai-project]
-    codeConfiguration:
-      runtime: python_3_13
-      entryPoint: main.py
+    codeConfiguration: {runtime: python_3_13, entryPoint: main.py}
     protocols:
       - protocol: a2a
         version: 1.0.0
     agentEndpoint:
       protocols: [a2a, responses]
     agentCard:
-      description: Reviews release risks using a model.
+      description: Hotel Agent queries a synthetic stay inventory. Input is a JSON query encoded as text.
       version: 1.0.0
       skills:
-        - id: risk
-          name: Risk
-          description: Review mitigations, verification and go/no-go conditions.
-          tags: [release-planning]
+        - id: hotels
+          name: Hotel Agent
+          description: 'JSON fields: destination, check_in, check_out, travelers (integer), refundable (boolean), max_office_distance_meters (integer).'
+          tags: [synthetic-travel, hotels]
     env:
       PYTHONNOUSERSITE: '1'
-      AGENT_ROLE: risk
-      AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+      AGENT_ROLE: hotels
       OTEL_INSTRUMENTATION_A2A_SDK_ENABLED: 'false'
       OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: 'false'
     container:
       resources: {cpu: '0.5', memory: 1Gi}
-  coordinator:
+  planner:
     host: azure.ai.agent
-    project: src/release-planner-a2a
+    project: src/travel-a2a
     language: python
     kind: hosted
-    name: release-coordinator
+    name: travel-planner
     uses: [ai-project]
-    codeConfiguration:
-      runtime: python_3_13
-      entryPoint: main.py
+    codeConfiguration: {runtime: python_3_13, entryPoint: main.py}
     protocols:
       - protocol: a2a
         version: 1.0.0
     agentEndpoint:
       protocols: [a2a, responses]
     agentCard:
-      description: Delegates scope and risk work over native A2A before synthesizing a release plan.
+      description: Travel Planner discovers Flight and Hotel A2A tools through a managed Foundry Toolbox.
       version: 1.0.0
       skills:
-        - id: coordinator
-          name: Release plan
-          description: Combine two specialist assessments into an actionable plan.
-          tags: [release-planning]
+        - id: planner
+          name: Travel Planner
+          description: Build an eligible synthetic itinerary using managed Toolbox flight and hotel results.
+          tags: [synthetic-travel, toolbox]
     env:
       PYTHONNOUSERSITE: '1'
-      AGENT_ROLE: coordinator
+      AGENT_ROLE: planner
+      TOOLBOX_ENDPOINT: ${TOOLBOX_ENDPOINT}
       AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
-      SCOPE_AGENT_ENDPOINT: ${SCOPE_AGENT_ENDPOINT}
-      RISK_AGENT_ENDPOINT: ${RISK_AGENT_ENDPOINT}
       OTEL_INSTRUMENTATION_A2A_SDK_ENABLED: 'false'
       OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: 'false'
     container:
