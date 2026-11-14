@@ -1900,19 +1900,34 @@ fi
 # Application stderr can surface through either monitor stream.
 # Logs and traces are eventually consistent, so only those
 # evidence sources receive bounded retrieval retries.
+# A2A requests run in the platform session named by the response's
+# X-Agent-Session-Id header, so those sessions are monitored too.
+log_sessions=("$CI_AGENT_SESSION_ID")
+served_sessions_file="$evidence_dir/a2a-served-sessions.txt"
+if [ -f "$served_sessions_file" ]; then
+  while IFS= read -r served_session; do
+    [ -n "$served_session" ] && [ "$served_session" != "$CI_AGENT_SESSION_ID" ] \
+      && log_sessions+=("$served_session")
+  done < "$served_sessions_file"
+fi
+trace_session="${log_sessions[${#log_sessions[@]}-1]}"
 collect_delayed_evidence() {
-  local attempt="$1"
-  echo "Using session: $CI_AGENT_SESSION_ID"
-  echo "=== Console Logs (attempt $attempt) ==="
-  if ! azd ai agent monitor --type console --session-id "$CI_AGENT_SESSION_ID" --tail 300 --no-prompt 2>&1 \
-      | tee "$console_log"; then
-    echo "(no console logs available)"
-  fi
-  echo "=== System Event Logs (attempt $attempt) ==="
-  if ! azd ai agent monitor --type system --session-id "$CI_AGENT_SESSION_ID" --tail 300 --no-prompt 2>&1 \
-      | tee "$system_log"; then
-    echo "(no system logs available)"
-  fi
+  local attempt="$1" session
+  : > "$console_log"
+  : > "$system_log"
+  for session in "${log_sessions[@]}"; do
+    echo "Using session: $session"
+    echo "=== Console Logs (attempt $attempt) ==="
+    if ! azd ai agent monitor --type console --session-id "$session" --tail 300 --no-prompt 2>&1 \
+        | tee -a "$console_log"; then
+      echo "(no console logs available)"
+    fi
+    echo "=== System Event Logs (attempt $attempt) ==="
+    if ! azd ai agent monitor --type system --session-id "$session" --tail 300 --no-prompt 2>&1 \
+        | tee -a "$system_log"; then
+      echo "(no system logs available)"
+    fi
+  done
   : > "$evidence_log"
   for log_file in "$console_log" "$system_log"; do
     [ -f "$log_file" ] && cat "$log_file" >> "$evidence_log"
@@ -1923,7 +1938,7 @@ collect_delayed_evidence() {
     python3 "$REPO_ROOT/.azure-pipelines/scripts/hosted-agents/scripts/collect-hosted-agent-traces.py" \
       --resource-group "$resource_group" \
       --agent-name "$AGENT_NAME" \
-      --session-id "$CI_AGENT_SESSION_ID" \
+      --session-id "$trace_session" \
       --output "$trace_file" || true
   fi
 }
@@ -1976,6 +1991,15 @@ cd "$WORK_DIR" 2>/dev/null || exit 0
 echo "Deleting session: $CI_AGENT_SESSION_ID"
 azd ai agent sessions delete "$CI_AGENT_SESSION_ID" --no-prompt 2>&1 \
   || echo "(session was not created or could not be deleted; continuing)"
+served_sessions_file="/tmp/agent-test-evidence-${COMBO_ID}/a2a-served-sessions.txt"
+if [ -f "$served_sessions_file" ]; then
+  while IFS= read -r served_session; do
+    [ -z "$served_session" ] || [ "$served_session" = "$CI_AGENT_SESSION_ID" ] && continue
+    echo "Deleting A2A-served session: $served_session"
+    azd ai agent sessions delete "$served_session" --no-prompt 2>&1 \
+      || echo "(A2A-served session could not be deleted; continuing)"
+  done < "$served_sessions_file"
+fi
 STEP_DELETE_AGENT_SESSION
     ;;
   delete-toolboxes)

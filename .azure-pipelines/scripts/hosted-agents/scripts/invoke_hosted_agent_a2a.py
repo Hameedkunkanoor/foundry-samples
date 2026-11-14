@@ -26,6 +26,32 @@ RETRYABLE_SERVICE_ERROR = re.compile(
 )
 
 
+SERVED_SESSIONS_FILE = "a2a-served-sessions.txt"
+SESSION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+
+
+def record_served_session(headers: str, evidence_dir: Path) -> str:
+    """Record the platform session that served the A2A request.
+
+    A2A requests are not routed by azd's --session-id, so console logs and
+    cleanup must target the session named by the response header.
+    """
+    for line in headers.splitlines()[1:]:
+        name, separator, value = line.partition(":")
+        if separator and name.strip().lower() == "x-agent-session-id":
+            session = value.strip()
+            if not SESSION_ID.fullmatch(session):
+                print("Ignoring malformed X-Agent-Session-Id header", file=sys.stderr)
+                return ""
+            served = evidence_dir / SERVED_SESSIONS_FILE
+            known = served.read_text(encoding="utf-8").split() if served.exists() else []
+            if session not in known:
+                with served.open("a", encoding="utf-8") as stream:
+                    stream.write(session + "\n")
+            return session
+    return ""
+
+
 def _run(arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         arguments,
@@ -207,6 +233,7 @@ def invoke_turn(
             if not match:
                 raise ValueError("A2A raw HTTP response has an invalid status line")
             http_code = match[1]
+            record_served_session(headers, evidence_dir)
         if result.returncode:
             error = f"A2A invoke failed with exit code {result.returncode}"
             retry_diagnostics = raw + "\n" + diagnostic

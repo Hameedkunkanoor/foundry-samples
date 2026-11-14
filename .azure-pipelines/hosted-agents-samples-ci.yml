@@ -615,6 +615,8 @@ stages:
                 scriptLocation: scriptPath
                 scriptPath: $(Build.SourcesDirectory)/.azure-pipelines/scripts/hosted-agents/run-hosted-agent.sh
                 arguments: delete-session
+              env:
+                COMBO_ID: $(comboId)
             - task: AzureCLI@2
               displayName: Delete temporary toolboxes
               retryCountOnTaskFailure: 3

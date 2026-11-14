@@ -162,10 +162,19 @@ response_session_uses=$((
   || fail "Responses invocation, approval continuation, and guardrails must use the cell session"
 grep -Fq 'azd ai agent sessions create' "$runner" \
   || fail "pipeline does not explicitly create the cell session"
-[ "$(grep -Fc -- '--session-id "$CI_AGENT_SESSION_ID"' "$runner")" -eq 6 ] \
-  || fail "session create, invocation, files, traces, and both monitoring calls must use the cell session"
+[ "$(grep -Fc -- '--session-id "$CI_AGENT_SESSION_ID"' "$runner")" -eq 3 ] \
+  || fail "session create, invocation, and files must use the cell session"
+grep -Fq 'log_sessions=("$CI_AGENT_SESSION_ID")' "$runner" \
+  || fail "evidence must start from the cell session"
+[ "$(grep -Fc -- '--session-id "$session"' "$runner")" -eq 2 ] \
+  || fail "both monitoring calls must cover every evidence session"
+grep -Fq -- '--session-id "$trace_session"' "$runner" \
+  || fail "trace collection must use the served evidence session"
 grep -Fq 'azd ai agent sessions delete "$CI_AGENT_SESSION_ID"' "$runner" \
   || fail "cleanup does not delete the cell session"
+grep -Fq 'a2a-served-sessions.txt' "$runner" \
+  && grep -Fq 'azd ai agent sessions delete "$served_session"' "$runner" \
+  || fail "cleanup does not delete platform-served A2A sessions"
 
 # Agent names must match the GitHub scheme exactly. Foundry mints one
 # AgentIdentity per distinct agent name and grants it a role, and the

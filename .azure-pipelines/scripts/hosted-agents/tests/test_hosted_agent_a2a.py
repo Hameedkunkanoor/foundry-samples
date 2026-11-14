@@ -112,7 +112,14 @@ class A2AInvocationTests(unittest.TestCase):
             self.assertFalse(outcome["approval_terminal_error"])
 
     def run_turn(
-        self, change=None, *, status=200, cli_exit=0, raw_json=False, stderr=""
+        self,
+        change=None,
+        *,
+        status=200,
+        cli_exit=0,
+        raw_json=False,
+        stderr="",
+        extra_headers="",
     ):
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)
@@ -141,7 +148,7 @@ class A2AInvocationTests(unittest.TestCase):
                 raw = (
                     body
                     if raw_json
-                    else f"HTTP/2.0 {status} OK\r\nContent-Type: application/json\r\n\r\n{body}"
+                    else f"HTTP/2.0 {status} OK\r\nContent-Type: application/json\r\n{extra_headers}\r\n{body}"
                 )
                 return subprocess.CompletedProcess(arguments, cli_exit, raw, stderr)
 
@@ -172,7 +179,30 @@ class A2AInvocationTests(unittest.TestCase):
             self.assertEqual(
                 json.loads((work / "invoke-result-1.json").read_text()), outcome
             )
+            served = work / "evidence" / invoke.SERVED_SESSIONS_FILE
+            self.served_sessions = served.read_text() if served.exists() else None
             return outcome, text, raw
+
+    def test_served_a2a_session_header_is_recorded_once_and_validated(self):
+        header = "X-Agent-Session-Id: 04edede55b0213d000k5HPbYfw\r\n"
+        outcome, _, _ = self.run_turn(extra_headers=header)
+        self.assertEqual(outcome["turn_exit"], 0)
+        self.assertEqual(self.served_sessions, "04edede55b0213d000k5HPbYfw\n")
+        for header in ("", "X-Agent-Session-Id: bad session;rm -rf /\r\n"):
+            with self.subTest(header=header):
+                outcome, _, _ = self.run_turn(extra_headers=header)
+                self.assertEqual(outcome["turn_exit"], 0)
+                self.assertIsNone(self.served_sessions)
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = Path(directory)
+            headers = "HTTP/2.0 200 OK\nx-agent-session-id: served-1"
+            for _ in range(2):
+                self.assertEqual(
+                    invoke.record_served_session(headers, evidence), "served-1"
+                )
+            self.assertEqual(
+                (evidence / invoke.SERVED_SESSIONS_FILE).read_text(), "served-1\n"
+            )
 
     def test_stderr_only_retry_diagnostics_are_retained_separately(self):
         for error in ("session_not_ready", "session_quota_exceeded", "HTTP 429"):
@@ -760,6 +790,94 @@ class A2ARunnerTests(unittest.TestCase):
                 plan, evidence, work / "console.txt", work / "trace.json"
             )
             self.assertEqual(report["status"], "error" if fail else "passed", report)
+
+    def test_real_runner_evidence_and_cleanup_follow_served_a2a_session(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            calls = work / "azd-calls"
+            azd = work / "azd"
+            azd.write_text(
+                f"#!{sys.executable}\n"
+                "import json, sys\n"
+                "from pathlib import Path\n"
+                "args = sys.argv[1:]\n"
+                f"Path({str(calls)!r}).open('a').write(' '.join(args) + '\\n')\n"
+                "if args[:3] == ['ai', 'agent', 'show']:\n"
+                "    print(json.dumps({'version': '2'}))\n"
+                "elif args[:3] == ['ai', 'agent', 'invoke']:\n"
+                "    req = json.loads(Path(args[args.index('--input-file') + 1]).read_text())\n"
+                "    body = {'jsonrpc':'2.0','id':req['id'],'result':{'task':{'id':'task-1','status':{'state':'TASK_STATE_COMPLETED'},'artifacts':[{'parts':[{'text':'Echo: hello'}]}]}}}\n"
+                "    print('HTTP/2.0 200 OK\\nX-Agent-Session-Id: served-1\\nContent-Type: application/json\\n\\n' + json.dumps(body))\n"
+                "elif args[:3] == ['ai', 'agent', 'monitor']:\n"
+                "    session = args[args.index('--session-id') + 1]\n"
+                "    print(f'startup for {session}')\n"
+                "    if session == 'served-1' and args[args.index('--type') + 1] == 'console':\n"
+                "        print('INFO:a2a.echo:A2A_ECHO_COMPLETED task_id=task-1')\n"
+                "elif args[:4] == ['ai', 'agent', 'sessions', 'delete']:\n"
+                "    print('deleted ' + args[4])\n"
+                "elif args[:2] == ['env', 'get-value']:\n"
+                "    pass\n"
+                "else:\n"
+                "    raise AssertionError(args)\n",
+                encoding="utf-8",
+            )
+            azd.chmod(0o700)
+            combo = work.name + "-a2a-served"
+            for prefix, suffix in (
+                ("agent-test-plan", ".json"),
+                ("agent-turn-plan", ".jsonl"),
+                ("agent-test-report", ".json"),
+                ("resolved-test-spec", ".json"),
+                ("agent-console", ".txt"),
+                ("agent-system", ".txt"),
+                ("agent-log-evidence", ".txt"),
+            ):
+                self.addCleanup(
+                    (Path("/tmp") / f"{prefix}-{combo}{suffix}").unlink, missing_ok=True
+                )
+            self.addCleanup(
+                shutil.rmtree, Path("/tmp") / f"agent-test-evidence-{combo}", True
+            )
+            environment = {
+                **os.environ,
+                "PATH": str(work) + os.pathsep + os.environ["PATH"],
+                "WORK_DIR": str(work),
+                "REPO_ROOT": str(ROOT),
+                "SAMPLE_PATH": SAMPLE + "/echo",
+                "COMBO_ID": combo,
+                "SAMPLE_NAME": "a2a-echo",
+                "PROTOCOL": "a2a",
+                "TOOLBOX_LABEL": "",
+                "TOOLBOX_QUERY": "",
+                "IS_TOOLBOX": "false",
+                "CI_AGENT_SESSION_ID": "cell-session",
+                "FOUNDRY_AGENT_NAME": "cell-agent",
+            }
+            for action in ("invoke", "evidence", "delete-session"):
+                result = subprocess.run(
+                    ["bash", str(SCRIPTS.parent / "run-hosted-agent.sh"), action],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    cwd=work,
+                    env=environment,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            recorded = calls.read_text().splitlines()
+            for session in ("cell-session", "served-1"):
+                for kind in ("console", "system"):
+                    self.assertIn(
+                        f"ai agent monitor --type {kind} --session-id {session} "
+                        "--tail 300 --no-prompt cell-agent",
+                        recorded,
+                    )
+                self.assertIn(
+                    f"ai agent sessions delete {session} --no-prompt --agent-name cell-agent",
+                    recorded,
+                )
+            console = (Path("/tmp") / f"agent-console-{combo}.txt").read_text()
+            self.assertIn("startup for cell-session", console)
+            self.assertIn("A2A_ECHO_COMPLETED task_id=task-1", console)
 
 
 if __name__ == "__main__":
